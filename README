@@ -1,0 +1,77 @@
+This project is a *simple POC* project for interacting with local or remote
+systemd service.
+
+How to make it work?
+====================
+
+Copy the `tcp_server.py` and `dbus_listener.py` on the hosts you want to
+interact with.
+One of these host will be the "primary" host, which will get dbus event
+notifications back (if you want).
+
+Adjust the `conf.py` file to list the correct IP addresses.
+Copy that file next to the other two on all the hosts.
+
+Configure the firewall to allow connections between the node:
+  sudo firewall-cmd --zone=public --add-port=12344/tcp
+
+Then on all the hosts, start `tcp_server.py` and `dbus_listener.py`.
+
+Call the client, for example:
+  - python client.py start rngd.service
+  - python client.py stop rngd.service
+  - python client.py state rngd.service
+  - python client.py status rngd.service
+
+
+On the logs of the tcp_server.py on a secondary node, you will see an output like:
+192.168.1.90 wrote:
+  b'status rngd.service'
+  failed
+192.168.1.90 wrote:
+  b'start rngd.service'
+  /org/freedesktop/systemd1/job/1024
+
+On the logs of tcp_server.py on the primary node, you will see the same output
+in addition to a number of json messages, each corresponding with a dbus event.
+
+On the db_listener.py logs, you will see the same dbus messages/notifications.
+Similar to:
+---end----
+arg:0        53194
+arg:1        /org/freedesktop/systemd1/job/53194
+arg:2        rngd.service
+arg:3        done
+kwargs:
+{'path': dbus.ObjectPath('/org/freedesktop/systemd1'), 'member': 'JobRemoved', 'interface': 'org.freedesktop.systemd1.Manager', 'msg': <dbus.lowlevel.SignalMessage path: /org/freedesktop/systemd1, iface: org.freedesktop.systemd1.Manager, member: JobRemoved, dest: (broadcast)>}
+---end----
+
+
+How does it work?
+=================
+
+We have a TCP socket open and running on all hosts.
+
+The client iterates through the list of nodes indicated in the configuration file.
+For each node, it connects to that socket and sends its action (<start/stop/status/state>
+<service>). The server then convert that action into a dbus event to tell systemd
+to act accordingly.
+
+The dbus_listener service just monitors all systemd events going through dbus and
+for each of them, report back to the socket open on the primary/main host.
+
+
+Current limitations
+===================
+
+The code is really rough, exception handling, configuration loading are all
+sub-optimized, it is really meant to just be a poc.
+
+There can only be 1 primary node.
+
+All systemd dbus events are reported to the primary node, they can't currently
+be filtered by, for example, only units of interest.
+
+Communication between the nodes are not encrypted.
+
+There is no authentication mechanism in place between the nodes.
